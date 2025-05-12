@@ -11,6 +11,7 @@ from huggingface_hub import InferenceClient
 from langchain_core.prompts import ChatPromptTemplate
 from huggingface_hub import AsyncInferenceClient
 import re
+from typing import Union, Dict
 
 class StrOutputParser:
     def invoke(self, response: str) -> str:
@@ -45,7 +46,8 @@ class LLMFieldExtractor:
 
         self.llm_client = AsyncInferenceClient(
             api_key=self.huggingface_token,
-            timeout=120
+            timeout=120,
+            provider="sambanova"
         )
 
         self.prompt = ChatPromptTemplate.from_template("""You are an information extraction system. Extract the required entities from the input statement based on the definitions below and return them in strict JSON format. Do not include any explanation, introduction, or extra text—only the final JSON.
@@ -73,32 +75,38 @@ Extracted Entities:""")
         self.output_parser = StrOutputParser()
 
     @staticmethod
-    def convert_model_output(model_output: str):
-    # Try to load full string as JSON first
+    def convert_model_output(model_output: str) -> Union[Dict, None]:
+        model_output = model_output.strip()
+
         try:
             parsed = json.loads(model_output)
-            print("Successfully parsed full model output as JSON.")
+            print("✅ Successfully parsed full model output as JSON.")
+
+            # If keys are already the direct output structure, return as-is
+            if all(k in parsed for k in ["Activity_Type", "Network_Name", "Service_Impact_Level", "Change_Type"]):
+                return parsed  # ✅ raw structure like user wants
+
         except json.JSONDecodeError:
-            print("Direct JSON parse failed. Attempting regex extraction...")
-            # Fallback: regex match for JSON object with list support
+            print("⚠️ Direct JSON parse failed. Attempting regex extraction...")
+
             json_block_matches = list(re.finditer(
-                r'"Activity_Type":\s*"[^"]*",\s*'
+                r'\{\s*"Activity_Type":\s*"[^"]*",\s*'
                 r'"Network_Name":\s*"[^"]*",\s*'
                 r'"Service_Impact_Level":\s*"[^"]*",\s*'
-                r'"Change_Type":\s*"[^"]*",\s*',
+                r'"Change_Type":\s*"[^"]*"\s*\}',
                 model_output,
                 re.DOTALL
             ))
 
             if not json_block_matches:
-                print("No valid JSON block found using regex.")
+                print("❌ No valid JSON block found using regex.")
                 return None
 
             last_json_block = json_block_matches[-1].group(0)
             parsed = json.loads(last_json_block)
-            print("Successfully parsed JSON from regex match.")
+            print("✅ Successfully parsed JSON from regex match.")
 
-        # Normalize into expected structure
+        # Return wrapped entity format (for validator/clarifier flow)
         return {
             "network_name": {"value": parsed.get("Network_Name")},
             "activity_type": {"value": parsed.get("Activity_Type")},
@@ -116,7 +124,7 @@ Extracted Entities:""")
                 "role": "user",
                 "content": formatted_prompt
             }],
-            model="mistralai/Mistral-7B-Instruct-v0.3",
+            model="deepseek-ai/DeepSeek-R1",
             temperature=0.3,
         )
         raw_output = response.choices[0].message.content
