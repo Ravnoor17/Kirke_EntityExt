@@ -31,7 +31,7 @@ with open(os.path.join(os.path.dirname(__file__), "Schema_Loader.json"), "r") as
 # ---------------------------
 class LLMFieldExtractor:
     huggingface_token = os.getenv("HF_key")
-    repo_id = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+    repo_id = "mistralai/Mixtral-8x7B-Instruct-v0.3"
 
 
     def __init__(self, schema: Dict[str, List[str]]):
@@ -44,7 +44,6 @@ class LLMFieldExtractor:
         self.schema = schema
 
         self.llm_client = AsyncInferenceClient(
-            model=self.repo_id,
             api_key=self.huggingface_token,
             timeout=120
         )
@@ -53,10 +52,10 @@ class LLMFieldExtractor:
 
 Entity Definitions:
 
-Activity_Type: A short phrase describing the main type of network activity (e.g., upgrade, maintenance, installation).
-Network_Name: The name or description of the primary network or segment affected.
-Service_Impact_Level: The estimated level of service impact (e.g., High, Medium, Low, None).
-Change_Type: The type of change this activity represents (e.g., Normal, Expedite, Breakfix)                                                       
+Activity_Type: A concise label for the primary network activity, such as "Upgrade", "Installation", "Maintenance", etc.
+Network_Name: The name or description of the main network, system, or segment impacted (e.g., Core, Transport, RAN).
+Service_Impact_Level: The estimated level of service impact due to the activity (e.g., High, Medium, Low, None, Service Affecting, Non Service Affecting).
+Change_Type: The classification of the change (e.g., Normal, Expedite, Breakfix, Emergency).                                                     
 
 If you are not able to accurately extract a field, return "NO" as the value for that field.
 
@@ -111,7 +110,16 @@ Extracted Entities:""")
         print(f"Extracting from input: {user_input}")
         formatted_prompt = self.prompt.format(question=user_input)
         print(formatted_prompt)
-        raw_output = await self.llm_client.text_generation(formatted_prompt)
+        #raw_output = await self.llm_client.text_generation(formatted_prompt) #check this line
+        response = await self.llm_client.chat.completions.create(
+            messages=[{
+                "role": "user",
+                "content": formatted_prompt
+            }],
+            model="mistralai/Mistral-7B-Instruct-v0.3",
+            temperature=0.3,
+        )
+        raw_output = response.choices[0].message.content
         final_output = self.output_parser.invoke(raw_output)
         print(f"Raw LLM output:\n{final_output}")
         final_output=str(final_output)
@@ -120,7 +128,8 @@ Extracted Entities:""")
         if extracted_fields is None:
             raise ValueError(f"No valid JSON block found in model output. Got:\n{final_output}")
         return extracted_fields
-
+    
+        
 
 # ---------------------------
 # FastAPI Models

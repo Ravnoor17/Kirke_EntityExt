@@ -90,7 +90,7 @@ class FieldExtractor:
 # Field Validation
 # ------------------------
 class FieldValidator:
-    def __init__(self, model_name='all-MiniLM-L6-v2', similarity_threshold=0.9, ambiguity_threshold=0.7, top_k=3):
+    def __init__(self, model_name='all-MiniLM-L6-v2', similarity_threshold=0.75, ambiguity_threshold=0.7, top_k=3):
         """
         Initialize the field validator with embedding model and similarity thresholds.
         """
@@ -156,11 +156,12 @@ class FieldValidator:
             best_match = values[I[0][0]]
             suggested_matches = [values[i] for i in I[0]]
 
-            # Determine validation status
             if best_score >= self.similarity_threshold:
                 status = "matched"
-            elif best_score < self.ambiguity_threshold:
+            elif best_score < self.similarity_threshold:
                 status = "ambiguous"
+            else:
+                status = "missing"  # This avoids undefined 'status'
 
             return {
                 "extracted_value": extracted_value,
@@ -169,7 +170,7 @@ class FieldValidator:
                 "status": status,
                 "suggested_matches": suggested_matches
             }
-
+        
     def validate_fields(self, extracted_fields: dict):
         """
         Validate only the fields from extracted_fields that are present in the schema.
